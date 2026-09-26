@@ -1,0 +1,83 @@
+.ming-builder {
+    --ming-bg: var(--comfy-menu-bg, #20242c);
+    --ming-panel: var(--comfy-input-bg, #151a22);
+    --ming-fg: var(--input-text, #e6edf7);
+    --ming-muted: #a7b2c2;
+    --ming-line: #455063;
+    --ming-accent: #94bcff;
+    box-sizing: border-box; color: var(--ming-fg); background: var(--ming-bg);
+    font: 12px/1.4 system-ui, sans-serif; text-align: left;
+    display: flex; flex-direction: column; gap: 10px; padding: 12px;
+    width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;
+    border: 1px solid var(--ming-line); border-radius: 8px;
+}
+.ming-builder *, .ming-builder *::before, .ming-builder *::after { box-sizing: border-box; }
+.ming-builder button, .ming-builder input, .ming-builder textarea, .ming-builder select { font: inherit; color: inherit; }
+.ming-builder button, .ming-builder select {
+    padding: 5px 9px; border: 1px solid var(--ming-line); background: var(--ming-panel);
+    border-radius: 5px; cursor: pointer; white-space: nowrap;
+}
+.ming-builder button:hover { border-color: var(--ming-accent); background: #2c3b50; }
+.ming-builder :focus-visible { outline: 2px solid var(--ming-accent); outline-offset: 2px; }
+.ming-builder button[aria-pressed="true"] { background: #304a70; border-color: var(--ming-accent); color: #fff; }
+.ming-builder button:disabled, .ming-builder input:disabled, .ming-builder textarea:disabled { opacity: .6; cursor: default; }
+.ming-toolbar, .ming-canvas-header, .ming-layer-header, .ming-dialog-actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.ming-identity { margin-right: auto; display: flex; gap: 9px; align-items: baseline; }
+.ming-identity strong { letter-spacing: .16em; font-size: 14px; }
+.ming-identity span, .ming-help, .ming-layer-header span { color: var(--ming-muted); font-size: 11px; }
+.ming-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ming-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ming-label { color: var(--ming-muted); font-size: 11px; font-weight: 600; }
+.ming-builder textarea, .ming-builder input[type="text"], .ming-builder input[type="number"] {
+    background: var(--ming-panel); border: 1px solid var(--ming-line); padding: 7px 8px; border-radius: 5px; min-width: 0;
+}
+.ming-builder textarea { display: block; resize: vertical; min-height: 54px; max-height: 190px; width: 100%; }
+.ming-builder input:invalid { border-color: #fa9e9e; }
+.ming-content { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(215px, 30%); grid-template-rows: minmax(0, 1fr); gap: 12px; flex: 1; min-height: 0; }
+.ming-workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: 7px; }
+.ming-canvas-header { justify-content: space-between; color: var(--ming-muted); font-size: 11px; }
+.ming-brightness { display: flex; gap: 6px; align-items: center; }
+.ming-brightness input { width: 74px; accent-color: var(--ming-accent); }
+.ming-brightness span { min-width: 28px; }
+.ming-stage {
+    display: flex; align-items: center; justify-content: center; flex: 1; min-height: 230px; overflow: hidden;
+    border: 1px solid var(--ming-line); border-radius: 5px; background: #0d1118;
+}
+.ming-canvas { display: block; touch-action: none; cursor: crosshair; outline: 1px solid #566171; }
+.ming-layer-header { justify-content: space-between; font-size: 10px; letter-spacing: .04em; }
+.ming-layers { height: 126px; min-height: 70px; overflow-y: auto; border: 1px solid var(--ming-line); border-radius: 5px; background: var(--ming-panel); }
+.ming-layer { display: flex; gap: 7px; align-items: center; padding: 7px; border-bottom: 1px solid #354052; cursor: pointer; }
+.ming-layer:hover { background: #273247; }
+.ming-layer.selected { background: #293e5e; box-shadow: inset 3px 0 var(--ming-accent); }
+.ming-layer.drop-target { border-top: 2px solid var(--ming-accent); }
+.ming-drag-grip { color: var(--ming-muted); cursor: grab; }
+.ming-layer-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ming-layer-swatch { width: 10px; height: 10px; border-radius: 2px; border: 1px solid #768197; flex-shrink: 0; }
+.ming-layer-number, .ming-type { font-size: 10px; color: var(--ming-muted); }
+.ming-type { width: 27px; }
+.ming-inspector { display: flex; flex-direction: column; gap: 11px; overflow-y: auto; min-height: 0; contain: size; padding: 0 3px 5px 12px; border-left: 1px solid var(--ming-line); }
+.ming-inspector-title { font-size: 10px; font-weight: 600; letter-spacing: .09em; color: var(--ming-muted); }
+.ming-type-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ming-empty { color: var(--ming-muted); padding: 8px; margin: 0; }
+.ming-colors { display: flex; flex-direction: column; gap: 5px; }
+.ming-color-row { display: flex; gap: 5px; align-items: center; }
+.ming-color-row input[type="color"] { width: 28px; height: 28px; padding: 0; background: transparent; border: 0; cursor: pointer; }
+.ming-color-row input[type="text"] { width: 90px; flex: 1; font-family: monospace; }
+.ming-geometry { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.ming-geometry label { display: flex; gap: 5px; align-items: center; color: var(--ming-muted); font-size: 10px; }
+.ming-geometry input { width: 100%; padding: 5px !important; }
+.ming-region-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+/* Validation and selection must not resize the canvas in the middle of a drag. */
+.ming-status { white-space: pre-line; height: 48px; flex: 0 0 48px; overflow-y: auto; font-size: 11px; color: var(--ming-muted); border-top: 1px solid var(--ming-line); padding-top: 8px; }
+.ming-status[data-kind="warning"] { color: #f0ca8b; }
+.ming-status[data-kind="error"], .ming-dialog-error { color: #ffb0b0; }
+.ming-source { font-size: 10px; color: var(--ming-muted); }
+.ming-source p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ming-menu { position: fixed; width: max-content; height: auto; padding: 6px; gap: 4px; z-index: 10000; box-shadow: 0 8px 25px #0008; }
+.ming-menu button { text-align: left; }
+.ming-json-dialog { width: min(740px, 90vw); height: min(620px, 85vh); margin: auto; padding: 20px; z-index: 10001; }
+.ming-json-dialog:not([open]) { display: none; }
+.ming-json-dialog::backdrop { background: #0009; }
+.ming-json-dialog textarea { flex: 1; max-height: none; font: 12px/1.5 ui-monospace, monospace; white-space: pre; }
+.ming-json-dialog h3 { margin: 0; font-size: 16px; }
+.ming-dialog-actions { justify-content: flex-end; }

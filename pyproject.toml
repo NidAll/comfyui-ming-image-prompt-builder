@@ -1,0 +1,10 @@
+[project]
+name = "comfyui-ming-image-prompt-builder"
+version = "0.1.0"
+description = "Visual Ming-Image-0.1-Design T2I structured prompt builder for ComfyUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-only"
+
+[tool.ruff]
+line-length = 120

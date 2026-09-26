@@ -1,0 +1,17 @@
+Ming Image Prompt Builder
+Copyright (C) 2026 Ming Image Prompt Builder contributors
+SPDX-License-Identifier: GPL-3.0-only
+
+Interaction design and workflow patterns inspired by Ideogram4PromptBuilderKJ,
+part of ComfyUI-KJNodes by Kijai and contributors (GNU GPL version 3):
+https://github.com/kijai/ComfyUI-KJNodes
+
+Reference files reviewed on 2026-09-26:
+  nodes/ideogram4_nodes.py
+  web/js/ideogram4_prompt_builder.js
+
+This package implements a Ming-native state model, parser and serializer, and
+a new node-embedded editor. It does not reuse Ideogram prompt schemas or
+conversion logic. It has no dependency on ComfyUI-KJNodes.
+
+The full GNU General Public License version 3 is included in LICENSE.

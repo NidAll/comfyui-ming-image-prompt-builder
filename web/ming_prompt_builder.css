@@ -81,3 +81,7 @@
 .ming-json-dialog textarea { flex: 1; max-height: none; font: 12px/1.5 ui-monospace, monospace; white-space: pre; }
 .ming-json-dialog h3 { margin: 0; font-size: 16px; }
 .ming-dialog-actions { justify-content: flex-end; }
+/* MOSS: summary caption across the top, then meta, palette and canvas. */
+.ming-settings-moss { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(110px, 150px); align-items: end; }
+.ming-settings-moss > .ming-field:first-child { grid-column: 1 / -1; }
+.ming-settings-moss select { width: 100%; }

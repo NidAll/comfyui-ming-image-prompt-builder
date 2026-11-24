@@ -25,6 +25,7 @@ COORDINATES = re.compile(
 )
 MAX_DIMENSION = 16384
 PREVIEW_EDGE = 1024
+TAGS = {"text": "TEXT", "character": "CHAR", "object": "OBJ"}
 
 
 class PromptValidationError(ValueError):
@@ -373,9 +374,9 @@ def render_preview(regions: list[dict], width: int, height: int, image: torch.Te
             right = min(size[0] - 1, round((region["x"] + region["w"]) * size[0]))
             bottom = min(size[1] - 1, round((region["y"] + region["h"]) * size[1]))
             x, y = min(x, right), min(y, bottom)
-            color = region["colors"][0] if region["colors"] else "#8AB4F8"
+            color = next((value for value in region["colors"] if HEX_COLOR.fullmatch(value)), "#8AB4F8")
             draw.rectangle((x, y, right, bottom), outline=color, width=2)
-            tag = f"{index:02d} {'TEXT' if region['kind'] == 'text' else 'OBJ'}"
+            tag = f"{index:02d} {TAGS.get(region['kind'], 'OBJ')}"
             box = draw.textbbox((x + 4, y + 3), tag, font=font)
             draw.rectangle((x, y, box[2] + 4, box[3] + 3), fill="#141820", outline=color)
             draw.text((x + 4, y + 3), tag, font=font, fill="white")

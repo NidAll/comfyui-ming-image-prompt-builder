@@ -1,12 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // UX inspired by Kijai's Ideogram4PromptBuilderKJ (ComfyUI-KJNodes, GPL-3.0).
-// Ming state, DOM editor, and Python-backed import/export are implemented here independently.
+// Ming/MOSS state, DOM editor, and Python-backed import/export are implemented here independently.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const NODE_TYPE = "MingImagePromptBuilder";
 const EDITORS = new WeakMap();
-const SETTINGS = ["width", "height", "image_style", "ambient_lighting", "bg_brightness", "output_format", "import_json"];
+// One editor, two model-facing formats. Python owns each serializer; this only changes the fields shown.
+export const FORMATS = {
+    MingImagePromptBuilder: {
+        route: "ming_prompt_builder", brand: ["MING", "Design · T2I"], json: "Ming JSON", ui: "ming", property: "ming_prompt_builder",
+        kinds: [["object", "Object", "OBJ"], ["text", "Text", "TEXT"]], relation: true, tags: false, hexOnly: true,
+        outputs: ["pretty", "compact"], caption: "Description", palette: "Colors",
+        areas: [["image_style", "Image Style", "e.g. modern editorial poster"], ["ambient_lighting", "Ambient Lighting", "e.g. soft studio lighting"]],
+        lines: [], selects: [],
+        settings: ["width", "height", "image_style", "ambient_lighting", "bg_brightness", "output_format", "import_json"],
+        canvas: ["width", "height", "image_style", "ambient_lighting"],
+    },
+    MossImagePromptBuilder: {
+        route: "moss_prompt_builder", brand: ["MOSS", "Image · Layout"], json: "MOSS JSON", ui: "moss", property: "moss_prompt_builder",
+        kinds: [["object", "Object", "OBJ"], ["character", "Character", "CHAR"], ["text", "Text", "TEXT"]], relation: false, tags: true, hexOnly: false,
+        outputs: ["compact", "pretty"], caption: "Caption", palette: "Palette",
+        areas: [["summary_caption", "Summary caption", "The whole image: subject, medium, style, lighting, mood…"]],
+        lines: [["meta", "Meta", "poster, product campaign"], ["palette", "Palette", "#F4EBDD, deep teal"]],
+        selects: [["canvas", "Canvas", ["single", "multi_panel", "collage"]]],
+        settings: ["width", "height", "summary_caption", "meta", "canvas", "palette", "bg_brightness", "output_format", "import_json"],
+        canvas: ["width", "height", "summary_caption", "meta", "canvas", "palette"],
+    },
+};
 let copiedRegion = null; // Session clipboard only; never a workflow property.
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -39,6 +59,10 @@ export function plainRegion(source) {
         return color;
     });
     if (typeof source.raw_description === "string") region.raw_description = source.raw_description;
+    if (source.tags != null) {
+        if (!Array.isArray(source.tags)) throw new Error("Region tags must be an array.");
+        region.tags = Array.from(source.tags, (tag) => String(tag));
+    }
     return region;
 }
 
@@ -65,8 +89,8 @@ function chain(object, name, callback) {
     };
 }
 
-async function request(operation, payload, signal) {
-    const response = await api.fetchApi(`/ming_prompt_builder/${operation}`, {
+async function request(route, operation, payload, signal) {
+    const response = await api.fetchApi(`/${route}/${operation}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal,
     });
     const data = await response.json();
@@ -75,8 +99,9 @@ async function request(operation, payload, signal) {
 }
 
 class MingEditor {
-    constructor(node) {
+    constructor(node, format) {
         this.node = node;
+        this.fmt = format;
         this.regions = [];
         this.selected = null;
         this.drag = null;
@@ -111,7 +136,7 @@ class MingEditor {
             this.queuedRevision = this.revision;
             return JSON.stringify({ ...plainState(this.durableRegions()), _preview_selected: this.selected });
         };
-        for (const name of SETTINGS) {
+        for (const name of this.fmt.settings) {
             const widget = field(node, name);
             if (!widget) continue;
             const original = widget.callback;
@@ -175,12 +200,12 @@ class MingEditor {
     buildUI() {
         const toolbar = element("div", "ming-toolbar");
         const identity = element("div", "ming-identity");
-        identity.append(element("strong", "", "MING"), element("span", "", "Design · T2I"));
+        identity.append(element("strong", "", this.fmt.brand[0]), element("span", "", this.fmt.brand[1]));
         toolbar.append(identity, this.button("Copy JSON", () => this.copyJSON()),
             this.button("Import JSON", () => this.jsonDialog()), this.button("Clear", () => this.clear()));
         this.format = element("select");
         this.format.setAttribute("aria-label", "Output format");
-        for (const name of ["pretty", "compact"]) {
+        for (const name of this.fmt.outputs) {
             const option = element("option", "", name);
             option.value = name;
             this.format.append(option);
@@ -188,10 +213,29 @@ class MingEditor {
         this.listen(this.format, "change", () => this.setSetting("output_format", this.format.value));
         toolbar.append(this.format);
 
-        const settings = element("div", "ming-settings");
-        this.style = this.inputArea("Image Style", "", (value) => this.setSetting("image_style", value), "e.g. modern editorial poster");
-        this.lighting = this.inputArea("Ambient Lighting", "", (value) => this.setSetting("ambient_lighting", value), "e.g. soft studio lighting");
-        settings.append(this.style.group, this.lighting.group);
+        const settings = element("div", `ming-settings ming-settings-${this.fmt.ui}`);
+        this.settingInputs = [];
+        for (const [name, label, placeholder] of this.fmt.areas) {
+            const area = this.inputArea(label, "", (value) => this.setSetting(name, value), placeholder);
+            this.settingInputs.push([name, area.input]); settings.append(area.group);
+        }
+        for (const [name, label, placeholder] of this.fmt.lines) {
+            const group = element("label", "ming-field"), input = element("input");
+            input.type = "text"; input.placeholder = placeholder; input.spellcheck = false;
+            input.setAttribute("aria-label", label);
+            this.listen(input, "input", () => this.setSetting(name, input.value));
+            this.listen(input, "change", () => this.notifyGraph());
+            group.append(element("span", "ming-label", label), input);
+            this.settingInputs.push([name, input]); settings.append(group);
+        }
+        for (const [name, label, values] of this.fmt.selects) {
+            const group = element("label", "ming-field"), select = element("select");
+            select.setAttribute("aria-label", label);
+            for (const value of values) { const option = element("option", "", value); option.value = value; select.append(option); }
+            this.listen(select, "change", () => { this.setSetting(name, select.value); this.notifyGraph(); });
+            group.append(element("span", "ming-label", label), select);
+            this.settingInputs.push([name, select]); settings.append(group);
+        }
 
         const content = element("div", "ming-content");
         const workspace = element("div", "ming-workspace");
@@ -211,7 +255,7 @@ class MingEditor {
         this.stage = element("div", "ming-stage");
         this.canvas = element("canvas", "ming-canvas");
         this.canvas.tabIndex = 0;
-        this.canvas.setAttribute("aria-label", "Ming region canvas");
+        this.canvas.setAttribute("aria-label", `${this.fmt.brand[0]} region canvas`);
         this.canvas.title = "Drag to draw · Ctrl/Cmd-drag over existing regions · Alt-click cycles overlaps";
         this.stage.append(this.canvas);
         const help = element("div", "ming-help", "Drag to draw · Ctrl/Cmd-drag over a region · Alt-click cycles overlaps");
@@ -231,7 +275,7 @@ class MingEditor {
     }
 
     hideWidgets() {
-        for (const name of [...SETTINGS.filter((name) => !["width", "height"].includes(name)), "layers_data"]) {
+        for (const name of [...this.fmt.settings.filter((name) => !["width", "height"].includes(name)), "layers_data"]) {
             const widget = field(this.node, name);
             if (!widget) continue;
             widget.hidden = true;
@@ -254,8 +298,7 @@ class MingEditor {
     }
 
     syncSettings() {
-        for (const [name, input] of [["image_style", this.style.input], ["ambient_lighting", this.lighting.input],
-            ["output_format", this.format], ["bg_brightness", this.brightness]]) {
+        for (const [name, input] of [...this.settingInputs, ["output_format", this.format], ["bg_brightness", this.brightness]]) {
             if (input !== document.activeElement) input.value = this.value(name);
             input.disabled = this.connected(name);
             input.title = input.disabled ? "Controlled by a connected input; updates after execution." : "";
@@ -271,7 +314,7 @@ class MingEditor {
     snapshot() {
         const snapshot = plainState(this.durableRegions());
         snapshot.settings = {};
-        for (const name of SETTINGS) {
+        for (const name of this.fmt.settings) {
             const value = this.value(name);
             if (typeof value === "string" || typeof value === "number") snapshot.settings[name] = value;
         }
@@ -289,7 +332,7 @@ class MingEditor {
         if (this.loadError) return;
         this.persist();
         serialized.properties ??= {};
-        serialized.properties.ming_prompt_builder = this.snapshot();
+        serialized.properties[this.fmt.property] = this.snapshot();
         // LiteGraph and Vue versions differ in when serializeValue is called.
         // Force the saved widget string to exclude the execution-only selection.
         const index = this.node.widgets.indexOf(field(this.node, "layers_data"));
@@ -298,10 +341,10 @@ class MingEditor {
 
     restore(serialized) {
         try {
-            const snapshot = serialized?.properties?.ming_prompt_builder;
+            const snapshot = serialized?.properties?.[this.fmt.property];
             this.regions = readRegions(snapshot ? JSON.stringify(snapshot) : this.value("layers_data"));
             if (snapshot?.settings) {
-                for (const name of SETTINGS) {
+                for (const name of this.fmt.settings) {
                     if (Object.hasOwn(snapshot.settings, name)) field(this.node, name).value = snapshot.settings[name];
                 }
             }
@@ -339,16 +382,18 @@ class MingEditor {
     }
 
     error(error) {
-        console.error("[MingImagePromptBuilder]", error);
+        console.error(`[${this.node.comfyClass}]`, error);
         this.message(error.message || String(error), "error");
     }
 
     payload() {
-        return { width: Number(this.value("width")), height: Number(this.value("height")),
-            image_style: this.value("image_style"), ambient_lighting: this.value("ambient_lighting"),
-            layers_data: JSON.stringify(plainState(this.durableRegions())), import_json: this.value("import_json") || "",
+        const payload = { layers_data: JSON.stringify(plainState(this.durableRegions())), import_json: this.value("import_json") || "",
             output_format: this.value("output_format") };
+        for (const name of this.fmt.canvas) payload[name] = ["width", "height"].includes(name) ? Number(this.value(name)) : this.value(name);
+        return payload;
     }
+
+    kindTag(kind) { return (this.fmt.kinds.find(([name]) => name === kind) || this.fmt.kinds[0])[2]; }
 
     scheduleValidation() {
         clearTimeout(this.validationTimer);
@@ -360,13 +405,14 @@ class MingEditor {
         this.validationRequest = new AbortController();
         const revision = this.revision;
         try {
-            const result = await request("serialize", this.payload(), this.validationRequest.signal);
+            const result = await request(this.fmt.route, "serialize", this.payload(), this.validationRequest.signal);
             if (revision !== this.revision || this.destroyed) return;
             const warnings = [...result.warnings];
             if (this.value("import_json")?.trim() || this.connected("import_json")) {
                 warnings.unshift("import_json overrides the editor on execution. Import into editor to edit locally.");
             }
-            this.message(warnings.length ? warnings.join("\n") : `${this.regions.length} regions · Valid Ming prompt · Export order: back → front`, warnings.length ? "warning" : "info");
+            const valid = result.mode === "caption" ? "Caption prompt (draw regions for a Layout)" : `Valid ${this.fmt.json}`;
+            this.message(warnings.length ? warnings.join("\n") : `${this.regions.length} regions · ${valid} · Export order: back → front`, warnings.length ? "warning" : "info");
         } catch (error) {
             if (error.name !== "AbortError" && revision === this.revision && !this.destroyed) this.message(error.message, "error");
         }
@@ -396,11 +442,11 @@ class MingEditor {
             row.setAttribute("aria-selected", String(region.id === this.selected));
             row.setAttribute("aria-label", `Layer ${this.regions.length - index}, ${region.kind}`);
             const swatch = element("span", "ming-layer-swatch");
-            swatch.style.background = validHex(region.colors[0] || "") ? region.colors[0] : "#8AB4F8";
-            const label = element("span", "ming-layer-label", region.kind === "text" ? region.text || "Untitled text" : region.description || "Untitled object");
+            swatch.style.background = region.colors.find(validHex) || "#8AB4F8";
+            const label = element("span", "ming-layer-label", region.kind === "text" ? region.text || "Untitled text" : region.description || `Untitled ${region.kind}`);
             row.append(element("span", "ming-drag-grip", "⠿"), swatch,
                 element("span", "ming-layer-number", String(this.regions.length - index).padStart(2, "0")),
-                element("span", "ming-type", region.kind === "text" ? "TEXT" : "OBJ"), label);
+                element("span", "ming-type", this.kindTag(region.kind)), label);
             this.listen(row, "click", () => this.select(region.id));
             this.listen(row, "keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.select(region.id); }
@@ -433,15 +479,15 @@ class MingEditor {
         const region = this.active();
         if (!region) {
             this.inspector.append(element("div", "ming-inspector-title", "REGION INSPECTOR"),
-                element("p", "ming-empty", "Select a region to describe an object or exact text."),
+                element("p", "ming-empty", `Select a region to describe ${this.fmt.kinds.length > 2 ? "an object, a character" : "an object"} or exact text.`),
                 element("p", "ming-help", "Delete removes · Ctrl/Cmd+C/V copies and pastes · Ctrl/Cmd+D duplicates"));
             return;
         }
         const header = element("div", "ming-inspector-title", `REGION ${this.regions.length - this.regions.indexOf(region)}`);
         const type = element("div", "ming-type-switch");
         type.setAttribute("aria-label", "Region type");
-        for (const name of ["object", "text"]) {
-            const button = this.button(name === "object" ? "Object" : "Text", () => {
+        for (const [name, title] of this.fmt.kinds) {
+            const button = this.button(title, () => {
                 if (region.kind === name) return;
                 // Switching imported text to Object preserves the full source description.
                 if (name === "object" && region.raw_description) region.description = region.raw_description;
@@ -458,24 +504,33 @@ class MingEditor {
             delete region.raw_description;
             this.changed(false); this.renderLayers();
         };
-        const description = this.inputArea("Description", region.description, (value) => updateText("description", value),
+        const description = this.inputArea(this.fmt.caption, region.description, (value) => updateText("description", value),
             region.kind === "text" ? "Visual appearance, typography, material…" : "Describe this visible object or group…");
         this.inspector.append(description.group);
         if (region.kind === "text") {
             const exact = this.inputArea("Exact Text", region.text, (value) => updateText("text", value), "Preserved exactly, including spacing and line breaks");
             this.inspector.append(exact.group);
         }
-        const relation = this.inputArea("Hierarchy / Relation", region.relation, (value) => {
-            region.relation = value; this.changed(false);
-        }, "e.g. primary title above the central subject");
-        this.inspector.append(relation.group);
+        if (this.fmt.relation) {
+            const relation = this.inputArea("Hierarchy / Relation", region.relation, (value) => {
+                region.relation = value; this.changed(false);
+            }, "e.g. primary title above the central subject");
+            this.inspector.append(relation.group);
+        }
+        if (this.fmt.tags) {
+            const tags = this.inputArea("Tags", (region.tags || []).join(", "), (value) => {
+                region.tags = value.split(/[,\n]/).map((tag) => tag.trim()).filter(Boolean); this.changed(false);
+            }, "Optional, comma separated: full body, three-quarter view");
+            tags.input.rows = 1;
+            this.inspector.append(tags.group);
+        }
         if (region.raw_description) {
             const note = element("details", "ming-source");
             note.append(element("summary", "", "Imported description preserved"), element("p", "", region.raw_description));
             this.inspector.append(note);
         }
         this.colorEditor = element("div", "ming-colors");
-        this.inspector.append(element("span", "ming-label", "Colors"), this.colorEditor);
+        this.inspector.append(element("span", "ming-label", this.fmt.palette), this.colorEditor);
         this.renderColors(region);
 
         const geometry = element("div", "ming-geometry");
@@ -510,13 +565,14 @@ class MingEditor {
             picker.type = "color"; picker.value = validHex(color) ? color : "#FFFFFF";
             picker.setAttribute("aria-label", `Color swatch ${index + 1}`);
             const hex = element("input");
-            hex.type = "text"; hex.value = color; hex.maxLength = 7;
+            hex.type = "text"; hex.value = color;
             hex.setAttribute("aria-label", `Color hex ${index + 1}`);
-            hex.pattern = "#[0-9A-Fa-f]{6}";
+            if (this.fmt.hexOnly) { hex.maxLength = 7; hex.pattern = "#[0-9A-Fa-f]{6}"; }
             const setColor = (value) => {
-                region.colors[index] = value.toUpperCase();
-                hex.value = region.colors[index];
-                hex.setCustomValidity(validHex(value) ? "" : "Use #RRGGBB.");
+                // MOSS palettes may also name colors ("deep teal"); Ming accepts #RRGGBB only.
+                region.colors[index] = this.fmt.hexOnly || validHex(value) ? value.toUpperCase() : value;
+                if (hex.value !== region.colors[index] && (this.fmt.hexOnly || validHex(value))) hex.value = region.colors[index];
+                hex.setCustomValidity(!this.fmt.hexOnly || validHex(value) ? "" : "Use #RRGGBB.");
                 if (validHex(value)) picker.value = value;
                 this.changed(false); this.renderLayers();
             };
@@ -594,6 +650,7 @@ class MingEditor {
         const before = JSON.stringify(plainState(this.regions));
         if (!region) {
             region = { id: uid(), x: point.x, y: point.y, w: 0, h: 0, kind: "object", text: "", description: "", relation: "", colors: [] };
+            if (this.fmt.tags) region.tags = [];
             this.regions.unshift(region); // A new layer starts at the FRONT.
         }
         this.selected = region.id;
@@ -706,7 +763,7 @@ class MingEditor {
         });
         for (const [label, action] of [["Bring forward", () => this.moveLayer(-1)], ["Send backward", () => this.moveLayer(1)],
             ["Duplicate layer", () => this.duplicate()], ["Delete layer", () => this.remove()],
-            ["Copy Ming JSON", () => this.copyJSON()], ["Import Ming JSON", () => this.jsonDialog()]]) {
+            [`Copy ${this.fmt.json}`, () => this.copyJSON()], [`Import ${this.fmt.json}`, () => this.jsonDialog()]]) {
             const button = this.button(label, () => { this.closeMenu(); return action(); });
             button.setAttribute("role", "menuitem"); menu.append(button);
         }
@@ -720,7 +777,7 @@ class MingEditor {
 
     async clear() {
         if (!this.regions.length && !this.loadError) return;
-        const approved = await app.extensionManager.dialog.confirm({ title: "Clear Ming regions",
+        const approved = await app.extensionManager.dialog.confirm({ title: `Clear ${this.fmt.brand[0]} regions`,
             message: this.loadError ? "Discard the invalid editor state and start again?" : `Remove all ${this.regions.length} regions?` });
         if (!approved) return;
         this.regions = []; this.selected = null; this.loadError = false;
@@ -729,10 +786,10 @@ class MingEditor {
 
     async copyJSON() {
         if (this.connected("import_json")) throw new Error("Disconnect import_json or import its value into the editor before copying JSON.");
-        const result = await request("serialize", this.payload());
+        const result = await request(this.fmt.route, "serialize", this.payload());
         try {
             await navigator.clipboard.writeText(result.prompt);
-            this.message("Ming JSON copied." + (result.warnings.length ? ` ${result.warnings.join(" ")}` : ""), result.warnings.length ? "warning" : "info");
+            this.message(`${this.fmt.json} copied.` + (result.warnings.length ? ` ${result.warnings.join(" ")}` : ""), result.warnings.length ? "warning" : "info");
         } catch (error) {
             // Clipboard permission/HTTP failures remain usable with an ordinary text selection.
             this.jsonDialog(result.prompt, true);
@@ -743,11 +800,13 @@ class MingEditor {
     jsonDialog(initial = this.value("import_json") || "", readOnly = false) {
         this.dialog?.remove();
         const dialog = element("dialog", "ming-builder ming-json-dialog");
-        const heading = element("h3", "", readOnly ? "Ming JSON" : "Import Ming JSON");
+        const heading = element("h3", "", readOnly ? this.fmt.json : `Import ${this.fmt.json}`);
         const text = element("textarea");
         text.value = initial; text.readOnly = readOnly; text.spellcheck = false;
-        text.setAttribute("aria-label", "Ming JSON");
-        const help = element("p", "ming-help", readOnly ? "Select all and copy the complete prompt." : "Import replaces regions and canvas settings. The editor keeps the imported aspect ratio.");
+        text.setAttribute("aria-label", this.fmt.json);
+        const help = element("p", "ming-help", readOnly ? "Select all and copy the complete prompt." : this.fmt.ui === "moss"
+            ? "Import replaces regions and summary. A model prompt is read on the current width × height; an editable draft (abs/xyxy) or plain caption also works."
+            : "Import replaces regions and canvas settings. The editor keeps the imported aspect ratio.");
         const error = element("p", "ming-dialog-error");
         error.setAttribute("role", "alert");
         const actions = element("div", "ming-dialog-actions");
@@ -760,7 +819,7 @@ class MingEditor {
             actions.append(this.button("Import into editor", async () => {
                 try {
                     if (this.connected("import_json")) throw new Error("Disconnect import_json before editing its imported value.");
-                    const result = await request("import", { prompt: text.value, width: Number(this.value("width")), height: Number(this.value("height")) });
+                    const result = await request(this.fmt.route, "import", { prompt: text.value, width: Number(this.value("width")), height: Number(this.value("height")) });
                     this.applyImport(result);
                     field(this.node, "import_json").value = "";
                     this.changed(); this.notifyGraph();
@@ -783,24 +842,24 @@ class MingEditor {
     applyImport(result) {
         this.regions = Array.from(result.regions, plainRegion);
         this.selected = null; this.loadError = false;
-        for (const name of ["width", "height", "image_style", "ambient_lighting"]) field(this.node, name).value = result[name];
+        for (const name of this.fmt.canvas) field(this.node, name).value = result[name];
         this.syncSettings();
     }
 
     executed(output) {
-        const result = output?.ming?.[0];
+        const result = output?.[this.fmt.ui]?.[0];
         if (!result) return;
         if (this.queuedRevision !== undefined && this.revision !== this.queuedRevision) {
             this.message("Execution finished using earlier inputs. Your newer editor changes were kept.");
             return;
         }
         if (result.regions) this.applyImport(result);
-        else for (const name of ["width", "height", "image_style", "ambient_lighting"]) field(this.node, name).value = result[name];
+        else for (const name of this.fmt.canvas) field(this.node, name).value = result[name];
         for (const name of ["bg_brightness", "output_format"]) field(this.node, name).value = result[name];
         this.executedBackground = output.ming_background?.[0] || "";
         this.loadBackground(this.executedBackground);
         this.syncSettings(); this.persist(); this.renderLayers(); this.renderInspector();
-        this.message(result.warnings.length ? result.warnings.join("\n") : "Ming prompt and layout preview ready.", result.warnings.length ? "warning" : "info");
+        this.message(result.warnings.length ? result.warnings.join("\n") : `${this.fmt.brand[0] === "MING" ? "Ming" : "MOSS"} prompt and layout preview ready.`, result.warnings.length ? "warning" : "info");
     }
 
     refreshBackground() {
@@ -876,11 +935,11 @@ class MingEditor {
         for (let i = this.regions.length - 1; i >= 0; i--) {
             const region = this.regions[i];
             const x = region.x * width, y = region.y * height, w = region.w * width, h = region.h * height;
-            const color = validHex(region.colors[0] || "") ? region.colors[0] : "#8AB4F8";
+            const color = region.colors.find(validHex) || "#8AB4F8";
             ctx.strokeStyle = color; ctx.lineWidth = 1.5;
             ctx.strokeRect(x, y, w, h);
             ctx.globalAlpha = 0.07; ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
-            const tag = `${String(this.regions.length - i).padStart(2, "0")} ${region.kind === "text" ? "TEXT" : "OBJ"}`;
+            const tag = `${String(this.regions.length - i).padStart(2, "0")} ${this.kindTag(region.kind)}`;
             ctx.font = "10px sans-serif"; ctx.textAlign = "left";
             const tagW = ctx.measureText(tag).width + 10;
             const tagX = clamp(x, 0, Math.max(0, width - tagW));
@@ -913,7 +972,8 @@ class MingEditor {
 app.registerExtension({
     name: "MingImage.PromptBuilder",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== NODE_TYPE) return;
+        const format = FORMATS[nodeData.name];
+        if (!format) return;
         if (!document.querySelector("link[data-ming-builder]")) {
             const stylesheet = element("link");
             stylesheet.rel = "stylesheet";
@@ -922,12 +982,12 @@ app.registerExtension({
             document.head.append(stylesheet);
         }
         chain(nodeType.prototype, "onNodeCreated", function () {
-            EDITORS.set(this, new MingEditor(this));
+            EDITORS.set(this, new MingEditor(this, format));
             this.resizable = true;
             this.size = [850, 840];
         });
     },
     loadedGraphNode(node) {
-        if (node.comfyClass === NODE_TYPE) EDITORS.get(node)?.refreshBackground();
+        if (FORMATS[node.comfyClass]) EDITORS.get(node)?.refreshBackground();
     },
 });

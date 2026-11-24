@@ -1,0 +1,313 @@
+{
+  "revision": 0,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "MossImagePromptBuilder",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        850,
+        840
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "summary_caption",
+          "name": "summary_caption",
+          "type": "STRING",
+          "widget": {
+            "name": "summary_caption"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "meta",
+          "name": "meta",
+          "type": "STRING",
+          "widget": {
+            "name": "meta"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "canvas",
+          "name": "canvas",
+          "type": "COMBO",
+          "widget": {
+            "name": "canvas"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "palette",
+          "name": "palette",
+          "type": "STRING",
+          "widget": {
+            "name": "palette"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "import_json",
+          "name": "import_json",
+          "type": "STRING",
+          "widget": {
+            "name": "import_json"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "bg_brightness",
+          "name": "bg_brightness",
+          "type": "INT",
+          "widget": {
+            "name": "bg_brightness"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "output_format",
+          "name": "output_format",
+          "type": "COMBO",
+          "widget": {
+            "name": "output_format"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "layers_data",
+          "name": "layers_data",
+          "type": "STRING",
+          "widget": {
+            "name": "layers_data"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            2
+          ]
+        },
+        {
+          "localized_name": "preview",
+          "name": "preview",
+          "type": "IMAGE",
+          "links": [
+            1
+          ]
+        },
+        {
+          "localized_name": "bboxes",
+          "name": "bboxes",
+          "type": "BOUNDING_BOX",
+          "links": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "localized_name": "layout_draft",
+          "name": "layout_draft",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MossImagePromptBuilder",
+        "moss_prompt_builder": {
+          "version": 1,
+          "order": "front_to_back",
+          "regions": [
+            {
+              "id": "layer_example_1",
+              "kind": "object",
+              "text": "",
+              "description": "A flat blue mountain illustration in the lower center.",
+              "relation": "",
+              "x": 0.21875,
+              "y": 0.3125,
+              "w": 0.5625,
+              "h": 0.5625,
+              "colors": [],
+              "tags": []
+            },
+            {
+              "id": "layer_example_2",
+              "kind": "text",
+              "text": "EXPLORE",
+              "description": "Large dark-blue uppercase title centered at the top.",
+              "relation": "",
+              "x": 0.125,
+              "y": 0.09375,
+              "w": 0.75,
+              "h": 0.125,
+              "colors": [],
+              "tags": []
+            }
+          ],
+          "settings": {
+            "width": 1024,
+            "height": 1024,
+            "summary_caption": "A minimalist travel poster with a cream background, a blue mountain illustration, and the title EXPLORE at the top.",
+            "meta": "poster",
+            "canvas": "single",
+            "palette": "",
+            "bg_brightness": 25,
+            "output_format": "compact",
+            "import_json": ""
+          }
+        }
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        "A minimalist travel poster with a cream background, a blue mountain illustration, and the title EXPLORE at the top.",
+        "poster",
+        "single",
+        "",
+        "",
+        25,
+        "compact",
+        "{\"version\":1,\"order\":\"front_to_back\",\"regions\":[{\"id\":\"layer_example_1\",\"kind\":\"object\",\"text\":\"\",\"description\":\"A flat blue mountain illustration in the lower center.\",\"relation\":\"\",\"x\":0.21875,\"y\":0.3125,\"w\":0.5625,\"h\":0.5625,\"colors\":[],\"tags\":[]},{\"id\":\"layer_example_2\",\"kind\":\"text\",\"text\":\"EXPLORE\",\"description\":\"Large dark-blue uppercase title centered at the top.\",\"relation\":\"\",\"x\":0.125,\"y\":0.09375,\"w\":0.75,\"h\":0.125,\"colors\":[],\"tags\":[]}]}"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "PreviewImage",
+      "pos": [
+        940,
+        40
+      ],
+      "size": [
+        140,
+        246
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 3,
+      "type": "PreviewAny",
+      "pos": [
+        940,
+        420
+      ],
+      "size": [
+        210,
+        122
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "source",
+          "name": "source",
+          "type": "*",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      1,
+      2,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      0,
+      3,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

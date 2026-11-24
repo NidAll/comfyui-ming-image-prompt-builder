@@ -15,3 +15,7 @@ a new node-embedded editor. It does not reuse Ideogram prompt schemas or
 conversion logic. It has no dependency on ComfyUI-KJNodes.
 
 The full GNU General Public License version 3 is included in LICENSE.
+
+The MOSS-Image Layout serializer (moss.py) implements the prompt format documented by
+OpenMOSS in https://github.com/OpenMOSS/MOSS-Image (USERGUIDE.md and
+skills/moss-image-prompt-enhancer, reviewed 2026-11-18). No OpenMOSS code is included.

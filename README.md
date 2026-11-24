@@ -1,6 +1,8 @@
-# Ming Image Prompt Builder
+# Ming / MOSS Image Prompt Builder
 
-A visual structured-prompt editor for **Ming-Image-0.1-Design text-to-image** in ComfyUI. Draw rectangles for visible semantic groups, describe objects or exact text, and export a Ming JSON prompt. Geometry and hierarchy are prompting guidance; they do not control the model deterministically.
+Two visual structured-prompt editors for ComfyUI that share one canvas: **Ming Image Prompt Builder** for Ming-Image-0.1-Design text-to-image, and **MOSS Image Layout Prompt Builder** for MOSS-Image Layout prompts ([below](#moss-image-layout-prompt-builder)).
+
+The Ming builder is a visual structured-prompt editor for **Ming-Image-0.1-Design text-to-image** in ComfyUI. Draw rectangles for visible semantic groups, describe objects or exact text, and export a Ming JSON prompt. Geometry and hierarchy are prompting guidance; they do not control the model deterministically.
 
 ![Ming visual region editor and text inspector](docs/editor.png)
 <!-- Screenshot placeholder for future UI updates: docs/editor.png -->
@@ -163,7 +165,32 @@ Validated on ComfyUI **0.37.0**, frontend **1.53.6**, with both classic and Vue 
 - Single-region selection; no templates, scene library, semantic layout, or freehand paths.
 - The preview may be smaller than the bbox coordinate grid; resize the target image or rescale boxes when a downstream consumer uses a different grid.
 
+## MOSS-Image Layout Prompt Builder
+
+Node ID `MossImagePromptBuilder`, under **MOSS Image / Prompt**. It writes the layout format documented by OpenMOSS for MOSS-Image ([USERGUIDE, "Layout Prompts"](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md) and the [prompt-enhancer skill](https://github.com/OpenMOSS/MOSS-Image/tree/main/skills/moss-image-prompt-enhancer), reviewed 2026-11-18). That is the model's own structured input, so no other JSON format was adapted:
+
+```json
+{"summary":{"meta":["poster"],"canvas":"single","caption":"A minimalist travel poster with a cream background…"},"items":[{"label":"text","caption":"Large dark-blue uppercase title centered at the top.","text":"EXPLORE","bbox":[-416,-384,-288,384]},{"label":"object","caption":"A flat blue mountain illustration in the lower center.","bbox":[-192,-288,384,288]}],"bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}
+```
+
+- **Summary**: `summary_caption` (the whole scene, medium and style; required once there is a box), `meta` (comma-separated tags), `canvas` (`single`, `multi_panel`, `collage`) and an optional `palette`.
+- **Boxes**: type **Object**, **Character** or **Text**; a **Caption** describing what it looks like; for text the **Exact Text** to render (line breaks kept, emitted literally in `text`); optional **Tags** and **Palette** (`#RRGGBB` or color names). There is no hierarchy field in MOSS, so it is hidden.
+- **Boxes and size**: `bbox` is `[y_min, x_min, y_max, x_max]` in integer pixels from the canvas centre. Fractional edges are enclosed (floor left/top, ceil right/bottom) before the centre is subtracted, the same rule as the official `compile_prompt.py`; the tests reproduce its published vectors. **Width and height must be multiples of 16** and must be the generation size: the prompt does not contain them. Connect `width`/`height` to the latent.
+- **Output**: `compact` (default) is the official one-line prompt; `pretty` is indented. With no boxes the prompt is just the summary caption (a plain caption prompt). Items are listed back to front.
+- **Outputs**: `prompt`, `preview`, `bboxes`, `width`, `height`, and `layout_draft`: the editable top-left `abs`/`xyxy` draft with width and height, which the official compiler and this node's import both accept.
+- **Import** accepts a compiled prompt (read on the current width × height), a draft (sets the size), `{"caption": …}` or plain caption text. Unknown keys are dropped with a warning; boxes outside the canvas are clipped with a warning.
+- **Foreign layouts** are converted on import, scaled to the current width × height:
+  - **Ideogram 4 caption JSON** (`compositional_deconstruction.elements`, `bbox` `[ymin, xmin, ymax, xmax]` on 0–1000, first element in front). Element order is reversed to MOSS's back-to-front order. `high_level_description` plus `background` becomes the summary caption, `style_description` fields become meta, and hex `color_palette` entries become palettes. Text elements keep their text, and elements whose description names a person become **Character**.
+  - **0–1000 assistant layouts** (`"grid": "xyxy-1000"`, `items` with `[x1, y1, x2, y2]`, back to front), such as PromptStyler Next's Layout Assist output.
+- **Warnings** (reminders, not quality predictions): text that may be too small to read at the chosen size, exact text repeated in its caption, duplicate text, sizes outside 0.25–4 MP.
+
+Connect **prompt → CLIP Text Encode (MOSS text encoder) → text** in an existing MOSS T2I workflow. The editor routes are `/moss_prompt_builder/serialize` and `/moss_prompt_builder/import`; HEISS Studio's layout builder uses the same routes, so Studio and ComfyUI produce identical prompts. Example: [example_workflows/moss_layout_prompt_builder.json](example_workflows/moss_layout_prompt_builder.json).
+
+Tested on 2026-11-18: 11 MOSS unit tests (official vectors, draft and compiled round trips, import of the user-guide example, validation, warnings, node execution), plus execution in a CPU-only ComfyUI and the editor in its frontend. No MOSS image generation was run, so the effect of a layout on generated images is unverified.
+
 ## Attribution and license
+
+The MOSS Layout format follows OpenMOSS's public MOSS-Image documentation (Apache-2.0 project); the serializer here is an independent implementation, and no OpenMOSS code is included.
 
 Inspired by Kijai's [Ideogram4PromptBuilderKJ backend](https://github.com/kijai/ComfyUI-KJNodes/blob/main/nodes/ideogram4_nodes.py) and [visual editor](https://github.com/kijai/ComfyUI-KJNodes/blob/main/web/js/ideogram4_prompt_builder.js) in **ComfyUI-KJNodes**, reviewed on 2026-09-26. The interaction concepts adapted here include normalized rectangles, force-draw, overlap cycling, resize handles, keyboard region operations, front/back ordering, swatches, hidden JSON state transport, and dimmed previews.
 

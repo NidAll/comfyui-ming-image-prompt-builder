@@ -1430,8 +1430,12 @@ class MingEditor {
     }
 
     async copyJSON() {
-        if (this.connected("import_json")) throw new Error("Disconnect import_json or import its value into the editor before copying JSON.");
-        const result = await request(this.fmt.route, "serialize", this.payload());
+        // A linked import_json fills the editor when the node runs, so copy what the editor shows then.
+        const linked = this.connected("import_json");
+        if (linked && !this.regions.length) throw new Error("Run the workflow once: Copy JSON then copies the layout the linked import_json puts here.");
+        const payload = this.payload();
+        if (linked) payload.import_json = "";
+        const result = await request(this.fmt.route, "serialize", payload);
         try {
             await navigator.clipboard.writeText(result.prompt);
             this.message(`${this.fmt.json} copied.` + (result.warnings.length ? ` ${result.warnings.join(" ")}` : ""), result.warnings.length ? "warning" : "info");
@@ -1517,8 +1521,17 @@ class MingEditor {
             if (this.backgroundSource) this.loadBackground("");
             return;
         }
-        const link = this.node.graph?.links?.[input.link];
-        const source = link && this.node.graph.getNodeById(link.origin_id);
+        const graph = this.node.graph;
+        const linkOf = (id) => graph?.links?.get?.(id) ?? graph?.links?.[id];
+        const link = linkOf(input.link);
+        let source = link && graph.getNodeById(link.origin_id);
+        // Look through image nodes in between (a resize, a crop) to the picture they start from.
+        for (let hop = 0; hop < 8 && source && source.comfyClass !== "LoadImage" && !source.imgs?.length; hop++) {
+            const upstream = source.inputs?.find((slot) => slot.type === "IMAGE" && slot.link != null);
+            const next = upstream && linkOf(upstream.link);
+            if (!next) break;
+            source = graph.getNodeById(next.origin_id);
+        }
         let url = "";
         if (source?.comfyClass === "LoadImage") {
             const name = field(source, "image")?.value;

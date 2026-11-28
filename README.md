@@ -54,13 +54,15 @@ Keyboard shortcuts never delete regions while typing in a text field. The list i
 | `ambient_lighting` | multiline STRING | Empty; global Ambient Lighting field |
 | `import_json` | multiline STRING | Empty; available in the Import JSON dialog or as a connected input |
 | `image` | optional IMAGE | Background; batches produce one preview per frame |
+| `format` | optional COMBO | `ming` (default) or `moss`: switches the editor and the prompt to MOSS-Image Layout JSON (same result as **MOSS Image Layout Prompt Builder**). Link Layout AI Assist's `format` output here and the format follows its `output_format` |
+| `summary_caption`, `meta`, `canvas`, `palette` | optional | MOSS summary fields, used only with `format: moss` |
 | `bg_brightness` | INT | 25%; background dimming, 0–100 |
 | `output_format` | ENUM | `pretty` or `compact`; defaults to `pretty` |
 | `layers_data` | hidden STRING | Versioned, JSON-safe editor state; can also be supplied through the API |
 
 | Output | Type | Meaning |
 |---|---|---|
-| `prompt` | STRING | Valid Ming JSON |
+| `prompt` | STRING | Valid Ming JSON (MOSS Layout JSON with `format: moss`) |
 | `preview` | IMAGE | RGB float tensor `[B,H,W,3]` with boxes, export numbers and OBJ/TEXT labels |
 | `bboxes` | BOUNDING_BOX | `[[{"x": int, "y": int, "width": int, "height": int}, ...], ...]` |
 | `width`, `height` | INT | Resolved canvas dimensions, including an imported aspect ratio |

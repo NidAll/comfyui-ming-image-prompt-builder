@@ -30,6 +30,8 @@ export const FORMATS = {
         canvas: ["width", "height", "summary_caption", "meta", "canvas", "palette"],
     },
 };
+// Nodes whose `format` input picks the editor: format value -> FORMATS key.
+const SWITCHABLE = { MingImagePromptBuilder: { ming: "MingImagePromptBuilder", moss: "MossImagePromptBuilder" } };
 let copiedRegion = null; // Session clipboard only; never a workflow property.
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -169,26 +171,30 @@ class MingEditor {
             const original = widget.callback;
             widget.callback = (...args) => {
                 original?.apply(widget, args);
+                // Some packs re-set every text widget while a prompt is queued; an unchanged value is no edit.
+                if (this.destroyed || widget.value === this.settingValues?.[name]) return;
                 this.syncSettings();
                 this.changed(false);
             };
         }
-        chain(node, "onSerialize", (serialized) => this.save(serialized));
-        chain(node, "onConfigure", (serialized) => this.restore(serialized));
-        chain(node, "onResize", () => {
+        // A format switch replaces this editor on the same node; its hooks then stay silent.
+        const hook = (name, callback) => chain(node, name, (...args) => { if (!this.destroyed) callback(...args); });
+        hook("onSerialize", (serialized) => this.save(serialized));
+        hook("onConfigure", (serialized) => this.restore(serialized));
+        hook("onResize", () => {
             if (node.size[0] < 580) node.size[0] = 580;
             this.paint();
         });
-        chain(node, "onRemoved", () => this.destroy());
-        chain(node, "onConnectionsChange", () => queueMicrotask(() => {
+        hook("onRemoved", () => this.destroy());
+        hook("onConnectionsChange", () => queueMicrotask(() => {
             if (!this.destroyed) { this.syncSettings(); this.refreshBackground(); }
         }));
-        chain(node, "onDrawForeground", () => {
+        hook("onDrawForeground", () => {
             this.refreshBackground();
             const scale = app.canvas.ds.scale;
             if (scale !== this.lastZoom) { this.lastZoom = scale; this.paint(); }
         });
-        chain(node, "onExecuted", (output) => this.executed(output));
+        hook("onExecuted", (output) => this.executed(output));
         this.restore();
     }
 
@@ -521,7 +527,8 @@ class MingEditor {
     }
 
     hideWidgets() {
-        for (const name of [...this.fmt.settings.filter((name) => !["width", "height"].includes(name)), "layers_data"]) {
+        const settings = SWITCHABLE[this.node.comfyClass] ? Object.values(FORMATS).flatMap((format) => format.settings) : this.fmt.settings;
+        for (const name of [...settings.filter((name) => !["width", "height"].includes(name)), "layers_data"]) {
             const widget = field(this.node, name);
             if (!widget) continue;
             widget.hidden = true;
@@ -544,6 +551,7 @@ class MingEditor {
     }
 
     syncSettings() {
+        this.settingValues = Object.fromEntries(this.fmt.settings.map((name) => [name, this.value(name)]));
         for (const [name, input] of [...this.settingInputs, ["output_format", this.format], ["bg_brightness", this.brightness]]) {
             if (input !== document.activeElement) input.value = this.value(name);
             input.disabled = this.connected(name);
@@ -1768,6 +1776,46 @@ class MingEditor {
     }
 }
 
+// The format a switchable node writes: a linked format follows the node it comes from (its
+// output_format/format setting, else what the last run reported); otherwise the node's own switch.
+export function chosenFormat(node) {
+    const choices = SWITCHABLE[node.comfyClass];
+    if (!choices) return node.comfyClass;
+    let value = field(node, "format")?.value;
+    const input = node.inputs?.find((slot) => slot.name === "format");
+    if (input?.link != null) {
+        const graph = node.graph;
+        const link = graph?.links?.get?.(input.link) ?? graph?.links?.[input.link];
+        const source = link && graph.getNodeById(link.origin_id);
+        const upstream = source && (field(source, "output_format") ?? field(source, "format"))?.value;
+        value = choices[upstream] ? upstream : node.executedFormat || value;
+    }
+    return choices[value] || choices.ming;
+}
+
+function syncFormat(node, serialized) {
+    const editor = EDITORS.get(node);
+    if (!editor || editor.destroyed) return editor;
+    const wanted = FORMATS[chosenFormat(node)];
+    if (editor.fmt === wanted) return editor;
+    editor.persist();
+    editor.destroy();
+    if (node.removeWidget) node.removeWidget(editor.widget);
+    else node.widgets?.splice(node.widgets.indexOf(editor.widget), 1);
+    const next = new MingEditor(node, wanted);
+    EDITORS.set(node, next);
+    if (serialized) next.restore(serialized);
+    // Boxes carry over; a kind the new format lacks (a MOSS character in Ming) becomes an object.
+    const kinds = new Set(wanted.kinds.map(([kind]) => kind));
+    if (next.regions.some((region) => !kinds.has(region.kind))) {
+        for (const region of next.regions) if (!kinds.has(region.kind)) region.kind = "object";
+        next.recordHistory();
+    }
+    next.changed();
+    node.setDirtyCanvas(true, true);
+    return next;
+}
+
 app.registerExtension({
     name: "MingImage.PromptBuilder",
     async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -1784,6 +1832,22 @@ app.registerExtension({
             EDITORS.set(this, new MingEditor(this, format));
             this.resizable = true;
             this.size = [920, 740];
+            if (!SWITCHABLE[nodeData.name]) return;
+            const node = this, formatWidget = field(node, "format");
+            if (formatWidget) {
+                const original = formatWidget.callback;
+                formatWidget.callback = (...args) => { original?.apply(formatWidget, args); syncFormat(node); };
+            }
+            chain(node, "onConfigure", (serialized) => syncFormat(node, serialized));
+            chain(node, "onConnectionsChange", () => queueMicrotask(() => syncFormat(node)));
+            chain(node, "onDrawForeground", () => syncFormat(node));
+            chain(node, "onExecuted", (output) => {
+                const ran = output?.format?.[0];
+                if (!ran) return;
+                node.executedFormat = ran;
+                const before = EDITORS.get(node), after = syncFormat(node);
+                if (after && after !== before) after.executed(output);
+            });
         });
     },
     loadedGraphNode(node) {

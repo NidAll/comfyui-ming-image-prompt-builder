@@ -391,6 +391,9 @@ def render_preview(regions: list[dict], width: int, height: int, image: torch.Te
     return torch.stack(previews), thumbnail
 
 
+FORMATS = ("ming", "moss")
+
+
 class MingImagePromptBuilder:
     @classmethod
     def INPUT_TYPES(cls):
@@ -404,16 +407,42 @@ class MingImagePromptBuilder:
             "bg_brightness": ("INT", {"default": 25, "min": 0, "max": 100}),
             "output_format": (["pretty", "compact"], {"default": "pretty"}),
             "layers_data": ("STRING", {"default": "[]", "multiline": False, "dynamicPrompts": False}),
-        }, "optional": {"image": ("IMAGE",)}}
+        }, "optional": {
+            "image": ("IMAGE",),
+            # The switch and the MOSS summary fields come last so saved Ming workflows keep their widget order.
+            "format": ("COMBO", {"options": list(FORMATS), "default": "ming",
+                                 "tooltip": "Ming writes canvas_settings + layers; MOSS writes a MOSS-Image Layout "
+                                            "(summary + items). Link a format output (Layout AI) to follow it."}),
+            "summary_caption": ("STRING", {"default": "", "multiline": True, "dynamicPrompts": False,
+                                           "tooltip": "MOSS only: summary.caption."}),
+            "meta": ("STRING", {"default": "", "multiline": False, "dynamicPrompts": False,
+                                "tooltip": "MOSS only: summary.meta, comma separated."}),
+            "canvas": ("COMBO", {"options": ["single", "multi_panel", "collage"], "default": "single",
+                                 "tooltip": "MOSS only: summary.canvas."}),
+            "palette": ("STRING", {"default": "", "multiline": False, "dynamicPrompts": False,
+                                   "tooltip": "MOSS only: summary.palette, comma separated."}),
+        }}
 
     RETURN_TYPES = ("STRING", "IMAGE", "BOUNDING_BOX", "INT", "INT")
     RETURN_NAMES = ("prompt", "preview", "bboxes", "width", "height")
     CATEGORY = "Ming Image/Prompt"
     FUNCTION = "build"
-    DESCRIPTION = "Build a Ming-Image-0.1-Design T2I JSON prompt from visual regions. Connect prompt to CLIP Text Encode."
+    DESCRIPTION = ("Build a Ming-Image-0.1-Design T2I JSON prompt from visual regions, or a MOSS-Image Layout prompt "
+                   "with format set to moss. Connect prompt to CLIP Text Encode.")
 
     def build(self, width, height, image_style="", ambient_lighting="", import_json="", bg_brightness=25,
-              output_format="pretty", layers_data="[]", image=None):
+              output_format="pretty", layers_data="[]", image=None, format="ming", summary_caption="", meta="",
+              canvas="single", palette=""):
+        if format == "moss":
+            from .moss import MossImagePromptBuilder
+
+            built = MossImagePromptBuilder().build(width, height, summary_caption, meta, canvas, palette, import_json,
+                                                   bg_brightness, output_format, layers_data, image)
+            built["ui"]["format"] = ["moss"]
+            built["result"] = built["result"][:5]  # this node has no layout_draft output
+            return built
+        if format != "ming":
+            raise PromptValidationError(f"format must be one of {', '.join(FORMATS)}.")
         resolved = resolve_prompt(width, height, image_style, ambient_lighting, layers_data, import_json, output_format)
         width, height, regions = resolved["width"], resolved["height"], resolved["regions"]
         preview, background = render_preview(regions, width, height, image, bg_brightness, resolved["selected"])
@@ -422,6 +451,7 @@ class MingImagePromptBuilder:
         ui = {"ming": [{key: resolved[key] for key in ("width", "height", "image_style", "ambient_lighting", "warnings")}],
               "ming_background": [background]}
         ui["ming"][0].update(bg_brightness=bg_brightness, output_format=output_format)
+        ui["format"] = ["ming"]
         if import_json.strip():
             ui["ming"][0]["regions"] = regions
         return {"ui": ui, "result": (resolved["prompt"], preview,

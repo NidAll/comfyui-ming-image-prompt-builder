@@ -166,6 +166,29 @@ class MossExportTests(unittest.TestCase):
         self.assertEqual(override["result"][0], json.dumps(json.loads(prompt), ensure_ascii=False, separators=(",", ":")))
         self.assertIn("regions", override["ui"]["moss"][0])
 
+    def test_ming_node_format_switch(self):
+        """The Ming node's format switch writes the same MOSS prompt as the MOSS node, and reports the format."""
+        nodes = importlib.import_module("moss_builder_pkg.nodes")
+        regions = [px(928, 272, 1408, 448, 1536, 1024, **TITLE), px(176, 224, 800, 864, 1536, 1024, **CUP)]
+        state = json.dumps({"version": 1, "order": "front_to_back", "regions": regions})
+        moss_out = moss.MossImagePromptBuilder().build(1536, 1024, "A warm studio campaign.", "poster", "single", "",
+                                                       "", 25, "compact", state)
+        switched = nodes.MingImagePromptBuilder().build(1536, 1024, import_json="", output_format="compact",
+                                                        layers_data=state, format="moss",
+                                                        summary_caption="A warm studio campaign.", meta="poster")
+        self.assertEqual(switched["result"][0], moss_out["result"][0])
+        self.assertEqual(len(switched["result"]), 5)
+        self.assertEqual(switched["ui"]["format"], ["moss"])
+        self.assertEqual(switched["ui"]["moss"][0]["meta"], moss_out["ui"]["moss"][0]["meta"])
+        ming_out = nodes.MingImagePromptBuilder().build(1536, 1024, layers_data=state)
+        self.assertEqual(ming_out["ui"]["format"], ["ming"])
+        self.assertIn("canvas_settings", json.loads(ming_out["result"][0]))
+        optional = nodes.MingImagePromptBuilder.INPUT_TYPES()["optional"]
+        self.assertEqual(list(optional), ["image", "format", "summary_caption", "meta", "canvas", "palette"])
+        self.assertEqual(optional["format"][0], "COMBO")  # a linked COMBO output (Layout AI format) validates
+        with self.assertRaises(nodes.PromptValidationError):
+            nodes.MingImagePromptBuilder().build(64, 64, format="ideogram")
+
 
 if __name__ == "__main__":
     unittest.main()

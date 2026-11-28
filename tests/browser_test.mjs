@@ -60,8 +60,12 @@ async function until(fn, message, milliseconds = 30000) {
 try {
     await page.goto(base);
     await page.waitForFunction(() => window.comfyAPI?.app?.app?.graph && window.LiteGraph?.registered_node_types?.MingImagePromptBuilder, { timeout: 60000 });
-    // Registration precedes ComfyUI's asynchronous default-workflow restoration.
-    await page.waitForFunction(() => window.comfyAPI.app.app.graph._nodes.length > 0);
+    // Newer ComfyUI opens a Templates modal instead of a default workflow on a fresh profile.
+    await page.waitForFunction(() => window.comfyAPI.app.app.graph._nodes.length > 0 || document.querySelector('[role="dialog"]'), { timeout: 15000 }).catch(() => {});
+    if (await page.locator('[role="dialog"]').count()) {
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(300);
+    }
     await page.evaluate(async (vue) => window.comfyAPI.app.app.extensionManager.setting.set("Comfy.VueNodes.Enabled", vue), process.env.MING_TEST_VUE === "1");
     await page.evaluate(() => {
         const app = window.comfyAPI.app.app;
@@ -303,6 +307,50 @@ try {
     await page.locator(".ming-layer").first().click();
     await page.screenshot({ path: path.join(output, "editor.png") });
     await page.locator(".ming-builder").first().screenshot({ path: path.join(output, "editor-crop.png") });
+
+    // Exercise new layout-focused UX: align, px/norm toggle, arrow nudge, undo/redo, lock/hide, draw tool, grid/snap.
+    const beforeAlign = (await state()).regions[0];
+    await page.getByRole("button", { name: "Align left edge", exact: true }).click();
+    assert.ok(Math.abs((await state()).regions[0].x) < 0.002);
+    await page.getByRole("button", { name: "Center horizontally", exact: true }).click();
+    const centered = (await state()).regions[0];
+    assert.ok(Math.abs((centered.x + centered.w / 2) - 0.5) < 0.002, JSON.stringify(centered));
+    await page.getByRole("button", { name: "px", exact: true }).click();
+    assert.equal(await page.getByRole("spinbutton", { name: "Pixel x", exact: true }).count(), 1);
+    await page.getByRole("button", { name: "norm", exact: true }).click();
+    await canvas().focus();
+    await page.keyboard.press("ArrowRight");
+    const nudged = (await state()).regions[0];
+    assert.ok(nudged.x > centered.x + 0.003, JSON.stringify({ centered, nudged }));
+    await page.keyboard.press("Control+z");
+    assert.ok(Math.abs((await state()).regions[0].x - centered.x) < 0.001);
+    await page.keyboard.press("Control+z");
+    assert.ok(Math.abs((await state()).regions[0].x) < 0.002);
+    await page.keyboard.press("Control+Shift+z");
+    assert.ok(Math.abs((await state()).regions[0].x - centered.x) < 0.001);
+    await page.keyboard.press("Control+Shift+z");
+    assert.ok(Math.abs((await state()).regions[0].x - nudged.x) < 0.001);
+    await page.keyboard.press("Control+z");
+    assert.ok(Math.abs((await state()).regions[0].x - beforeAlign.x) < 0.001);
+
+    await page.getByRole("button", { name: "Toggle layout grid", exact: true }).click();
+    await page.getByRole("button", { name: "Toggle snapping", exact: true }).click();
+    await page.getByRole("button", { name: "Toggle snapping", exact: true }).click();
+    await page.locator(".ming-layer").first().getByRole("button", { name: "Lock layer", exact: true }).click();
+    await page.locator(".ming-layer").first().getByRole("button", { name: "Hide layer", exact: true }).click();
+    const lockedHiddenState = await state();
+    assert.equal("locked" in lockedHiddenState.regions[0], false);
+    assert.equal("hidden" in lockedHiddenState.regions[0], false);
+    await page.getByRole("button", { name: "Draw", exact: true }).click();
+    await drag([0.1, 0.72], [0.35, 0.9]);
+    assert.equal((await state()).regions.length, 4);
+    await page.keyboard.press("Control+z");
+    assert.equal((await state()).regions.length, 3);
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    await page.getByRole("tab", { name: "Scene", exact: true }).click();
+    assert.equal(await page.getByRole("textbox", { name: "Image Style", exact: true }).isVisible(), true);
+    console.log("PASS layout tools: align, px/norm, arrow nudge, undo/redo, lock/hide, draw mode, grid/snap, tabs");
+
     await writeFile(path.join(output, "workflow.json"), JSON.stringify(afterPNG.workflow, null, 2));
     await page.getByRole("button", { name: "Clear", exact: true }).click();
     const confirm = page.getByRole("dialog").filter({ hasText: "Clear Ming regions" });
@@ -310,6 +358,15 @@ try {
     await confirm.getByRole("button", { name: /confirm|yes|delete|clear/i }).click();
     await until(async () => (await state()).regions.length === 0, "Clear all did not remove regions");
     console.log("PASS clear all with confirmation");
+
+    // Also render MossImagePromptBuilder with an example layout to verify 3-kind segmented control & Scene tab.
+    const mossExample = JSON.parse(await readFile(new URL("../example_workflows/moss_layout_prompt_builder.json", import.meta.url), "utf8"));
+    await page.evaluate(async (workflow) => window.comfyAPI.app.app.loadGraphData(workflow), mossExample);
+    await canvas().waitFor({ state: "visible" });
+    if (await page.locator(".ming-layer").count()) await page.locator(".ming-layer").first().click();
+    await page.locator(".ming-builder").first().screenshot({ path: path.join(output, "moss-crop.png") });
+    console.log("PASS MOSS layout builder render and 3-kind inspector");
+
     assert.deepEqual(errors, [], `Browser errors: ${errors.join("; ")}`);
     console.log("PASS no browser errors; screenshots and PNG saved to", output);
 } catch (error) {

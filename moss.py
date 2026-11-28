@@ -23,6 +23,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from .ideogram import place_elements
 from .nodes import (MAX_DIMENSION, PromptValidationError, _geometry, _load_json, _number, _string,
                     parse_editor_state)
 
@@ -200,13 +201,28 @@ PEOPLE = re.compile(r"\b(person|people|man|men|woman|women|girl|boy|child|childr
                     r"doctor|nurse|chef|cook|worker|farmer|fisherman|pirate|ninja|samurai|elf|fairy|angel|vampire|"
                     r"zombie|mermaid|astronaut|couple|family|friend|crowd|villager|merchant|shopkeeper|clerk|"
                     r"customer|cowboy|detective|officer|firefighter|mother|father|grandmother|grandfather|"
-                    r"businessman|businesswoman|idol|mage|archer|hunter|ranger|monk|priest|nun)s?\b", re.I)
+                    r"businessman|businesswoman|idol|mage|archer|hunter|ranger|monk|priest|nun|goblin|troll|gnome|dwarf|orc|ogre|imp|"
+                    r"pixie|alien|mascot|hobbit|elves|dwarves|fairies)s?\b", re.I)
 
 
 def _kind(noun: str, text: str) -> str:
     if text:
         return "text"
     return "character" if PEOPLE.search(noun or "") else "object"
+
+
+def _head_kind(head: str, text: str) -> str:
+    """Kind from an element's naming phrase: a people word counts when it is the noun ("a small goblin",
+    "woman reading"), not when it describes another noun ("fairy house", "knight statue")."""
+    if text:
+        return "text"
+    words = re.findall(r"[a-z'-]+", (head or "").lower())
+    for at, word in enumerate(words):
+        if PEOPLE.fullmatch(word) or PEOPLE.fullmatch(word.split("-")[-1]):
+            after = words[at + 1] if at + 1 < len(words) else ""
+            if not after or PEOPLE.fullmatch(after) or after.endswith(("ing", "ed")) or after in ("of", "and", "or"):
+                return "character"
+    return "object"
 
 
 def _grid_box(box: Any, label: str, width: int, height: int, order: str) -> list[int]:
@@ -240,7 +256,8 @@ def _hexes(value: Any) -> list[str]:
 def foreign_layout(document: dict, width: int, height: int):
     """Ideogram 4 caption JSON or a 0-1000 assistant layout -> (editable MOSS draft, source name), else None.
 
-    Ideogram 4: ``compositional_deconstruction.elements`` (index 0 is the front), ``bbox`` ``[ymin, xmin,
+    Ideogram 4: ``compositional_deconstruction.elements`` (listed by importance; boxes and layers come from
+    ``ideogram.place_elements``), optional ``bbox`` ``[ymin, xmin,
     ymax, xmax]`` on 0-1000, ``type`` obj/text, ``desc``, ``color_palette``; ``style_description`` becomes meta.
     Assistant layouts (PromptStyler Next Layout Assist): ``items`` with ``[x1, y1, x2, y2]`` on 0-1000, back to
     front, ``"grid": "xyxy-1000"``.
@@ -263,19 +280,28 @@ def foreign_layout(document: dict, width: int, height: int):
         elements = scene.get("elements") or []
         if not isinstance(elements, list):
             raise PromptValidationError("compositional_deconstruction.elements must be an array.")
-        for index, element in enumerate(reversed(elements)):  # Ideogram lists FRONT first; MOSS BACK first
-            label = f"elements[{len(elements) - 1 - index}]"
+        for index, element in enumerate(elements):
             if not isinstance(element, dict):
-                raise PromptValidationError(f"{label} must be an object.")
+                raise PromptValidationError(f"elements[{index}] must be an object.")
+            if element.get("bbox") is not None:
+                _grid_box(element["bbox"], f"elements[{index}]", width, height, "yxyx")  # same errors as before
+        # 2026-11-25: Ideogram lists elements by importance, not depth, and LLM-written prompts rarely carry a
+        # bbox. Boxes now come from each bbox or from the position words in desc, and layers from depth words and
+        # size (ideogram.py); before, every bbox-less element sat in the top-left corner and list order was depth.
+        placed, notes = place_elements(elements, width, height, kind_of=_head_kind)
+        warnings.extend(notes)
+        for entry in placed:  # back to front, as MOSS lists them
+            index, element = entry["index"], elements[entry["index"]]
+            label = f"elements[{index}]"
             text = _string(element.get("text", ""), f"{label}.text") if element.get("type") == "text" else ""
             desc = _string(element.get("desc", ""), f"{label}.desc")
-            if element.get("bbox") is None:
-                box = [round(width * 0.03), round(height * 0.03), round(width * 0.25), round(height * 0.17)]
-                warnings.append(f"{label} had no bbox; it was placed in the top-left corner.")
-            else:
+            if entry["source"] == "bbox":
                 box = _grid_box(element["bbox"], label, width, height, "yxyx")
-            items.append({"label": "text" if text else _kind(desc, ""), "caption": desc, "text": text,
-                          "palette": _hexes(element.get("color_palette")), "bbox": box})
+            else:
+                x1, y1, x2, y2 = entry["box"]
+                box = [round(x1 * width), round(y1 * height), round(x2 * width), round(y2 * height)]
+            items.append({"label": entry["kind"],
+                          "caption": desc, "text": text, "palette": _hexes(element.get("color_palette")), "bbox": box})
         source = "Ideogram 4"
     else:
         caption = _string(document.get("caption", ""), "caption")

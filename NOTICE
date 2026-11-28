@@ -19,3 +19,7 @@ The full GNU General Public License version 3 is included in LICENSE.
 The MOSS-Image Layout serializer (moss.py) implements the prompt format documented by
 OpenMOSS in https://github.com/OpenMOSS/MOSS-Image (USERGUIDE.md and
 skills/moss-image-prompt-enhancer, reviewed 2026-11-18). No OpenMOSS code is included.
+
+ideogram.py (Ideogram 4 element placement) comes unchanged from the moss-layout-pipeline project and is
+licensed under the Apache License 2.0 (SPDX-License-Identifier: Apache-2.0), which permits its inclusion in
+this GPL-3.0 package.

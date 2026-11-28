@@ -1793,6 +1793,18 @@ export function chosenFormat(node) {
     return choices[value] || choices.ming;
 }
 
+// A format wire dropped on the node body lands on its first COMBO input, the hidden output_format
+// (or canvas); nobody means that, so move it to the format switch.
+function redirectFormatLink(node, type, index, connected, link) {
+    if (type !== 1 || !connected || !link) return;
+    const input = node.inputs?.[index];
+    if (!input || input.name === "format" || input.type !== "COMBO") return;
+    const source = node.graph?.getNodeById(link.origin_id);
+    if (source?.outputs?.[link.origin_slot]?.name !== "format") return;
+    node.disconnectInput(index);
+    source.connect(link.origin_slot, node, "format");
+}
+
 function syncFormat(node, serialized) {
     const editor = EDITORS.get(node);
     if (!editor || editor.destroyed) return editor;
@@ -1839,7 +1851,10 @@ app.registerExtension({
                 formatWidget.callback = (...args) => { original?.apply(formatWidget, args); syncFormat(node); };
             }
             chain(node, "onConfigure", (serialized) => syncFormat(node, serialized));
-            chain(node, "onConnectionsChange", () => queueMicrotask(() => syncFormat(node)));
+            chain(node, "onConnectionsChange", (type, index, connected, link) => queueMicrotask(() => {
+                redirectFormatLink(node, type, index, connected, link);
+                syncFormat(node);
+            }));
             chain(node, "onDrawForeground", () => syncFormat(node));
             chain(node, "onExecuted", (output) => {
                 const ran = output?.format?.[0];
